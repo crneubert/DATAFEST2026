@@ -8,7 +8,7 @@ if __name__ == '__main__':
     SELECT *
     FROM departments
     LIMIT 5
-    """).show()
+    """)
 
     diagnosis = duckdb.read_csv(
         r"Data/diagnosis.csv",
@@ -18,7 +18,7 @@ if __name__ == '__main__':
         SELECT *
         FROM diagnosis
         LIMIT 5
-        """).show()
+        """)
 
     encounters = duckdb.read_csv(
         r"Data/encounters.csv",
@@ -28,7 +28,7 @@ if __name__ == '__main__':
         SELECT *
         FROM encounters
         LIMIT 5
-        """).show()
+        """)
 
     patients = duckdb.read_csv(
         r"Data/patients.csv",
@@ -38,7 +38,7 @@ if __name__ == '__main__':
         SELECT *
         FROM patients
         LIMIT 5
-        """).show()
+        """)
 
     providers = duckdb.read_csv(
         r"Data/providers.csv",
@@ -48,7 +48,7 @@ if __name__ == '__main__':
         SELECT *
         FROM providers
         LIMIT 5
-        """).show()
+        """)
 
     social_determinants = duckdb.read_csv(
         r"Data/social_determinants.csv",
@@ -58,7 +58,7 @@ if __name__ == '__main__':
         SELECT *
         FROM social_determinants
         LIMIT 5
-        """).show()
+        """)
 
     tigercensuscodes = duckdb.read_csv(
         r"Data/tigercensuscodes.csv",
@@ -68,7 +68,7 @@ if __name__ == '__main__':
         SELECT *
         FROM tigercensuscodes
         LIMIT 5
-        """).show()
+        """)
 
     AllData = duckdb.sql("""
         SELECT *
@@ -84,4 +84,47 @@ if __name__ == '__main__':
         LEFT JOIN social_determinants s
         ON e.EncounterKey = s.EncounterKey
         """)
-    AllData.show()
+
+    print(AllData.columns)
+    importantColumns = duckdb.sql("""
+    SELECT  CensusTract, DepartmentKey, DepartmentName, 
+            DiagnosisKey, DiagnosisName, DiagnosisValue, 
+            GroupCode, GroupName, AdmissionInstant, 
+            AdmissionSource, AdmissionType, DischargeInstant, 
+            DischargeProviderDurableKey, EncounterKey, IsEDVisit, Date
+            IsHospitalAdmission, IsHospitalOutpatientVisit, IsInpatientAdmission,
+            IsObservation, IsOutpatientFaceToFaceVisit, PatientDurableKey,
+            Type, VisitType, VisitTypeDescription, 
+            FirstRace, MaritalStatus, MyChartStatus,
+            OmbEthnicity, OmbRace, PatientBirthYearBin,
+            SexAssignedAtBirth, SexualOrientation, SmokingStatus,
+            VitalStatus, ClinicianTitle, PrimaryDepartment,
+            PrimarySpecialty, Type, AnswerText, DisplayName,
+            Domain
+    FROM AllData
+    """)
+
+    encounters = duckdb.sql("""
+    SELECT PatientDurableKey, COUNT(*) AS Encounters, MIN(Date) AS FirstVisit, MAX(Date) AS LastVisit,
+    ARRAY_AGG(date ORDER BY date) AS all_dates
+    FROM AllData
+    WHERE GroupName IN ['Type 2 diabetes mellitus']
+    GROUP BY PatientDurableKey
+    """)
+
+    encounters.show()
+
+    duckdb.sql("""
+    SELECT *,
+    CASE 
+           WHEN Encounters > 1
+           THEN DATEDIFF('day', all_dates[1], all_dates[2])
+           ELSE NULL
+       END AS DaysBetweenFirstSecond,
+    CASE 
+           WHEN Encounters > 1
+           THEN DATEDIFF('day', FirstVisit, LastVisit)/(Encounters-1)
+           ELSE NULL
+       END AS AvgBetweenEnc
+    FROM encounters
+    """).show()
