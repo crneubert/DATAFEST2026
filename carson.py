@@ -1,368 +1,422 @@
-# --------------------------------------------
-# CLEAN ENCOUNTER-LEVEL TABLE FROM AllData
-# --------------------------------------------
 import duckdb
+import pandas as pd
 
+con = duckdb.connect()
 
-departments = duckdb.read_csv(
-       r"Data/departments.csv",
-       auto_detect=True,
-   )
-duckdb.sql("""
-   SELECT *
-   FROM departments
-   LIMIT 5
-   """)
-
-
-diagnosis = duckdb.read_csv(
-       r"Data/diagnosis.csv",
-       auto_detect=True,
-   )
-duckdb.sql("""
-       SELECT *
-       FROM diagnosis
-       LIMIT 5
-       """)
-
-
-encounters = duckdb.read_csv(
-       r"Data/encounters.csv",
-       auto_detect=True
-   )
-duckdb.sql("""
-       SELECT *
-       FROM encounters
-       LIMIT 5
-       """)
-
-
-patients = duckdb.read_csv(
-       r"Data/patients.csv",
-       auto_detect=True
-   )
-duckdb.sql("""
-       SELECT *
-       FROM patients
-       LIMIT 5
-       """)
-
-
-providers = duckdb.read_csv(
-       r"Data/providers.csv",
-       auto_detect=True
-   )
-duckdb.sql("""
-       SELECT *
-       FROM providers
-       LIMIT 5
-       """)
-
-
-social_determinants = duckdb.read_csv(
-       r"Data/social_determinants.csv",
-       auto_detect=True
-   )
-duckdb.sql("""
-       SELECT *
-       FROM social_determinants
-       LIMIT 5
-       """)
-tigercensuscodes = duckdb.read_csv(
-       r"Data/tigercensuscodes.csv",
-       auto_detect=True
-   )
-duckdb.sql("""
-       SELECT *
-       FROM tigercensuscodes
-       LIMIT 5
-       """)
-
-
-AllData = duckdb.sql("""
-       SELECT *
-       FROM encounters e
-       LEFT JOIN departments d
-       ON e.DepartmentKey = d.DepartmentKey
-       LEFT JOIN diagnosis di
-       ON e.PrimaryDiagnosisKey = di.DiagnosisKey
-       LEFT JOIN patients p
-       ON e.PatientDurableKey = p.DurableKey
-       LEFT JOIN providers pr
-       ON e.PatientDurableKey = pr.DurableKey
-       LEFT JOIN social_determinants s
-       ON e.EncounterKey = s.EncounterKey
-       """)
-
-
-EncounterLevel = duckdb.sql("""
-WITH encounter_level AS (
-   SELECT DISTINCT
-       EncounterKey,
-       PatientDurableKey,
-       CAST(Date AS DATE) AS EncounterDate,
-
-
-       DepartmentKey,
-       DepartmentName,
-
-
-       DiagnosisKey,
-       DiagnosisName,
-       DiagnosisValue,
-       GroupCode,
-       GroupName,
-
-
-       IsEDVisit,
-       IsHospitalAdmission,
-       IsHospitalOutpatientVisit,
-       IsInpatientAdmission,
-       IsObservation,
-       IsOutpatientFaceToFaceVisit,
-
-
-       Type,
-       VisitType,
-       VisitTypeDescription,
-
-
-       CensusTract,
-       FirstRace,
-       MaritalStatus,
-       MyChartStatus,
-       OmbEthnicity,
-       OmbRace,
-       PatientBirthYearBin,
-       SexAssignedAtBirth,
-       SexualOrientation,
-       SmokingStatus,
-       VitalStatus
-
-
-   FROM AllData
-)
-SELECT *
-FROM encounter_level
+# -----------------------------
+# load raw files
+# -----------------------------
+con.sql("""
+CREATE OR REPLACE TEMP VIEW departments AS
+SELECT * FROM read_csv_auto('Data/departments.csv')
 """)
 
+con.sql("""
+CREATE OR REPLACE TEMP VIEW diagnosis AS
+SELECT * FROM read_csv_auto('Data/diagnosis.csv')
+""")
 
-# --------------------------------------------
-# MAIN JOURNEY TABLE
-# --------------------------------------------
-JourneyTable = duckdb.sql("""
-WITH encounter_level AS (
-   SELECT *
-   FROM EncounterLevel
+con.sql("""
+CREATE OR REPLACE TEMP VIEW encounters AS
+SELECT * FROM read_csv_auto('Data/encounters.csv')
+""")
+
+con.sql("""
+CREATE OR REPLACE TEMP VIEW patients AS
+SELECT * FROM read_csv_auto('Data/patients.csv')
+""")
+
+con.sql("""
+CREATE OR REPLACE TEMP VIEW providers AS
+SELECT * FROM read_csv_auto('Data/providers.csv')
+""")
+
+con.sql("""
+CREATE OR REPLACE TEMP VIEW social_determinants AS
+SELECT * FROM read_csv_auto('Data/social_determinants.csv')
+""")
+
+# -----------------------------
+# clean merged table
+# NO long SDOH columns here except for separate flag later
+# -----------------------------
+con.sql("""
+CREATE OR REPLACE TEMP VIEW AllData AS
+SELECT
+    e.EncounterKey,
+    e.PatientDurableKey,
+    CAST(e.Date AS DATE) AS EncounterDate,
+
+    e.DepartmentKey,
+    e.PrimaryDiagnosisKey,
+
+    e.AdmissionSource,
+    e.AdmissionType,
+
+    e.IsEDVisit,
+    e.IsHospitalAdmission,
+    e.IsHospitalOutpatientVisit,
+    e.IsInpatientAdmission,
+    e.IsObservation,
+    e.IsOutpatientFaceToFaceVisit,
+
+    e.VisitType,
+    e.VisitTypeDescription,
+
+    d.DepartmentName,
+    d.DepartmentType,
+    d.DepartmentSpecialty,
+    d.City AS DepartmentCity,
+    d.County AS DepartmentCounty,
+    d.PostalCode AS DepartmentPostalCode,
+    d.CensusTract AS DepartmentCensusTract,
+
+    di.DiagnosisName,
+    di.DiagnosisValue,
+    di.GroupCode,
+    di.GroupName,
+
+    p.CensusBlockGroupFipsCode,
+    p.FirstRace,
+    p.MaritalStatus,
+    p.MyChartStatus,
+    p.OmbEthnicity,
+    p.OmbRace,
+    p.PatientBirthYearBin,
+    p.SexAssignedAtBirth,
+    p.SexualOrientation,
+    p.SmokingStatus,
+    p.VitalStatus,
+
+    pr.ClinicianTitle,
+    pr.PrimaryDepartment,
+    pr.PrimarySpecialty,
+    pr.OfficeCity,
+    pr.OfficePostalCode
+
+FROM encounters e
+LEFT JOIN departments d
+    ON e.DepartmentKey = d.DepartmentKey
+LEFT JOIN diagnosis di
+    ON e.PrimaryDiagnosisKey = di.DiagnosisKey
+LEFT JOIN patients p
+    ON e.PatientDurableKey = p.DurableKey
+LEFT JOIN providers pr
+    ON e.AttendingProviderDurableKey = pr.DurableKey
+""")
+
+print("Running final modeling query...")
+
+query = """
+WITH diabetes_patients AS (
+    SELECT DISTINCT PatientDurableKey
+    FROM AllData
+    WHERE GroupName = 'Type 2 diabetes mellitus'
 ),
 
+encounter_core AS (
+    SELECT DISTINCT
+        *
+    FROM AllData
+    WHERE PatientDurableKey IN (SELECT PatientDurableKey FROM diabetes_patients)
+),
 
 data_end AS (
-   SELECT MAX(EncounterDate) AS DataEndDate
-   FROM encounter_level
+    SELECT MAX(EncounterDate) AS DataEndDate
+    FROM encounter_core
 ),
 
-
-diabetes_outpatient AS (
-   SELECT
-       *,
-       ROW_NUMBER() OVER (
-           PARTITION BY PatientDurableKey
-           ORDER BY EncounterDate, EncounterKey
-       ) AS rn
-   FROM encounter_level
-   WHERE GroupName = 'Type 2 diabetes mellitus'
-     AND IsOutpatientFaceToFaceVisit = 1
+index_candidates AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY PatientDurableKey
+            ORDER BY EncounterDate, EncounterKey
+        ) AS rn
+    FROM encounter_core
+    WHERE GroupName = 'Type 2 diabetes mellitus'
+      AND IsOutpatientFaceToFaceVisit = 1
 ),
-
 
 index_visits AS (
-   SELECT
-       PatientDurableKey,
-       EncounterKey AS IndexEncounterKey,
-       EncounterDate AS IndexOutpatientDate,
+    SELECT
+        PatientDurableKey,
+        EncounterKey AS IndexEncounterKey,
+        EncounterDate AS FirstOutpatientDate,
 
+        EXTRACT(YEAR FROM EncounterDate) AS IndexYear,
+        EXTRACT(MONTH FROM EncounterDate) AS IndexMonth,
+        EXTRACT(DOW FROM EncounterDate) AS IndexDayOfWeek,
 
-       DepartmentKey AS IndexDepartmentKey,
-       DepartmentName AS IndexDepartmentName,
+        DepartmentKey AS IndexDepartmentKey,
+        DepartmentName AS IndexDepartmentName,
+        DepartmentType AS IndexDepartmentType,
+        DepartmentSpecialty AS IndexDepartmentSpecialty,
+        DepartmentCity AS IndexDepartmentCity,
+        DepartmentCounty AS IndexDepartmentCounty,
+        DepartmentPostalCode AS IndexDepartmentPostalCode,
+        DepartmentCensusTract AS IndexDepartmentCensusTract,
 
+        DiagnosisName AS IndexDiagnosisName,
+        DiagnosisValue AS IndexDiagnosisValue,
+        GroupCode AS IndexGroupCode,
+        GroupName AS IndexGroupName,
 
-       DiagnosisKey AS IndexDiagnosisKey,
-       DiagnosisName AS IndexDiagnosisName,
-       DiagnosisValue AS IndexDiagnosisValue,
-       GroupCode AS IndexGroupCode,
-       GroupName AS IndexGroupName,
+        AdmissionSource AS IndexAdmissionSource,
+        AdmissionType AS IndexAdmissionType,
+        VisitType AS IndexVisitType,
+        VisitTypeDescription AS IndexVisitTypeDescription,
 
+        CensusBlockGroupFipsCode,
+        FirstRace,
+        MaritalStatus,
+        MyChartStatus,
+        OmbEthnicity,
+        OmbRace,
+        PatientBirthYearBin,
+        SexAssignedAtBirth,
+        SexualOrientation,
+        SmokingStatus,
+        VitalStatus,
 
-       Type AS IndexEncounterType,
-       VisitType AS IndexVisitType,
-       VisitTypeDescription AS IndexVisitTypeDescription,
-
-
-       CensusTract,
-       FirstRace,
-       MaritalStatus,
-       MyChartStatus,
-       OmbEthnicity,
-       OmbRace,
-       PatientBirthYearBin,
-       SexAssignedAtBirth,
-       SexualOrientation,
-       SmokingStatus,
-       VitalStatus
-   FROM diabetes_outpatient
-   WHERE rn = 1
+        ClinicianTitle,
+        PrimaryDepartment,
+        PrimarySpecialty,
+        OfficeCity,
+        OfficePostalCode
+    FROM index_candidates
+    WHERE rn = 1
 ),
 
-
-next_diabetes_outpatient AS (
-   SELECT
-       i.PatientDurableKey,
-       MIN(e.EncounterDate) AS SecondOutpatientDate
-   FROM index_visits i
-   JOIN encounter_level e
-     ON e.PatientDurableKey = i.PatientDurableKey
-    AND e.GroupName = 'Type 2 diabetes mellitus'
-    AND e.IsOutpatientFaceToFaceVisit = 1
-    AND (
-           e.EncounterDate > i.IndexOutpatientDate
-           OR (e.EncounterDate = i.IndexOutpatientDate AND e.EncounterKey <> i.IndexEncounterKey)
-        )
-   GROUP BY i.PatientDurableKey
+second_outpatient AS (
+    SELECT
+        i.PatientDurableKey,
+        MIN(e.EncounterDate) AS SecondOutpatientDate
+    FROM index_visits i
+    JOIN encounter_core e
+      ON e.PatientDurableKey = i.PatientDurableKey
+     AND e.GroupName = 'Type 2 diabetes mellitus'
+     AND e.IsOutpatientFaceToFaceVisit = 1
+     AND (
+            e.EncounterDate > i.FirstOutpatientDate
+            OR (e.EncounterDate = i.FirstOutpatientDate AND e.EncounterKey <> i.IndexEncounterKey)
+         )
+    GROUP BY i.PatientDurableKey
 ),
 
-
-first_ed_after_index AS (
-   SELECT
-       i.PatientDurableKey,
-       MIN(e.EncounterDate) AS FirstEDDate
-   FROM index_visits i
-   JOIN encounter_level e
-     ON e.PatientDurableKey = i.PatientDurableKey
-    AND e.IsEDVisit = 1
-    AND (
-           e.EncounterDate > i.IndexOutpatientDate
-           OR (e.EncounterDate = i.IndexOutpatientDate AND e.EncounterKey <> i.IndexEncounterKey)
-        )
-   GROUP BY i.PatientDurableKey
+first_ed AS (
+    SELECT
+        i.PatientDurableKey,
+        MIN(e.EncounterDate) AS FirstEDDate
+    FROM index_visits i
+    JOIN encounter_core e
+      ON e.PatientDurableKey = i.PatientDurableKey
+     AND e.IsEDVisit = 1
+     AND (
+            e.EncounterDate > i.FirstOutpatientDate
+            OR (e.EncounterDate = i.FirstOutpatientDate AND e.EncounterKey <> i.IndexEncounterKey)
+         )
+    GROUP BY i.PatientDurableKey
 ),
 
+first_inpatient AS (
+    SELECT
+        i.PatientDurableKey,
+        MIN(e.EncounterDate) AS FirstInpatientDate
+    FROM index_visits i
+    JOIN encounter_core e
+      ON e.PatientDurableKey = i.PatientDurableKey
+     AND e.IsInpatientAdmission = 1
+     AND (
+            e.EncounterDate > i.FirstOutpatientDate
+            OR (e.EncounterDate = i.FirstOutpatientDate AND e.EncounterKey <> i.IndexEncounterKey)
+         )
+    GROUP BY i.PatientDurableKey
+),
 
-first_inpatient_after_index AS (
-   SELECT
-       i.PatientDurableKey,
-       MIN(e.EncounterDate) AS FirstInpatientDate
-   FROM index_visits i
-   JOIN encounter_level e
-     ON e.PatientDurableKey = i.PatientDurableKey
-    AND e.IsInpatientAdmission = 1
-    AND (
-           e.EncounterDate > i.IndexOutpatientDate
-           OR (e.EncounterDate = i.IndexOutpatientDate AND e.EncounterKey <> i.IndexEncounterKey)
-        )
-   GROUP BY i.PatientDurableKey
-)
+prior_util AS (
+    SELECT
+        i.PatientDurableKey,
 
+        MAX(e.EncounterDate) FILTER (
+            WHERE e.EncounterDate < i.FirstOutpatientDate
+        ) AS PrevEncounterDate,
 
-SELECT
-   i.*,
-   d.DataEndDate,
-   DATEDIFF('day', i.IndexOutpatientDate, d.DataEndDate) AS DaysObservedAfterIndex,
+        MAX(e.EncounterDate) FILTER (
+            WHERE e.GroupName = 'Type 2 diabetes mellitus'
+              AND e.EncounterDate < i.FirstOutpatientDate
+        ) AS PrevDiabetesEncounterDate,
 
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 180 DAY
+        ) AS PriorEncounters180,
 
-   CASE
-       WHEN DATEDIFF('day', i.IndexOutpatientDate, d.DataEndDate) >= 180 THEN 1
-       ELSE 0
-   END AS CanObserve180Days,
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.IsOutpatientFaceToFaceVisit = 1
+              AND e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 180 DAY
+        ) AS PriorOutpatient180,
 
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.IsEDVisit = 1
+              AND e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 180 DAY
+        ) AS PriorED180,
 
-   o.SecondOutpatientDate,
-   CASE
-       WHEN o.SecondOutpatientDate IS NOT NULL
-       THEN DATEDIFF('day', i.IndexOutpatientDate, o.SecondOutpatientDate)
-       ELSE NULL
-   END AS DaysToSecondOutpatient,
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.IsInpatientAdmission = 1
+              AND e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 180 DAY
+        ) AS PriorInpatient180,
 
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.GroupName = 'Type 2 diabetes mellitus'
+              AND e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 180 DAY
+        ) AS PriorDiabetes180,
 
-   ed.FirstEDDate,
-   CASE
-       WHEN ed.FirstEDDate IS NOT NULL
-       THEN DATEDIFF('day', i.IndexOutpatientDate, ed.FirstEDDate)
-       ELSE NULL
-   END AS DaysToFirstED,
+        COUNT(DISTINCT e.DepartmentKey) FILTER (
+            WHERE e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 180 DAY
+        ) AS PriorDistinctDepartments180,
 
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 365 DAY
+        ) AS PriorEncounters365,
 
-   ip.FirstInpatientDate,
-   CASE
-       WHEN ip.FirstInpatientDate IS NOT NULL
-       THEN DATEDIFF('day', i.IndexOutpatientDate, ip.FirstInpatientDate)
-       ELSE NULL
-   END AS DaysToFirstInpatient,
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.IsEDVisit = 1
+              AND e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 365 DAY
+        ) AS PriorED365,
 
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.IsInpatientAdmission = 1
+              AND e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 365 DAY
+        ) AS PriorInpatient365,
 
-   CASE
-       WHEN ed.FirstEDDate IS NOT NULL
-            AND (o.SecondOutpatientDate IS NULL OR ed.FirstEDDate < o.SecondOutpatientDate)
-       THEN 1
-       ELSE 0
-   END AS EDBeforeFollowup,
+        COUNT(DISTINCT e.EncounterKey) FILTER (
+            WHERE e.GroupName = 'Type 2 diabetes mellitus'
+              AND e.EncounterDate < i.FirstOutpatientDate
+              AND e.EncounterDate >= i.FirstOutpatientDate - INTERVAL 365 DAY
+        ) AS PriorDiabetes365
+    FROM index_visits i
+    LEFT JOIN encounter_core e
+      ON e.PatientDurableKey = i.PatientDurableKey
+    GROUP BY i.PatientDurableKey
+),
 
+sdoh_flag AS (
+    SELECT
+        EncounterKey,
+        1 AS HasAnySDOHAtIndex
+    FROM social_determinants
+    WHERE AnswerText IS NOT NULL
+    GROUP BY EncounterKey
+),
 
-   CASE
-       WHEN ip.FirstInpatientDate IS NOT NULL
-            AND (o.SecondOutpatientDate IS NULL OR ip.FirstInpatientDate < o.SecondOutpatientDate)
-       THEN 1
-       ELSE 0
-   END AS InpatientBeforeFollowup,
+final_df AS (
+    SELECT
+        i.*,
+        d.DataEndDate,
+        DATEDIFF('day', i.FirstOutpatientDate, d.DataEndDate) AS DaysObservedAfterIndex,
 
+        s.SecondOutpatientDate,
+        CASE
+            WHEN s.SecondOutpatientDate IS NOT NULL
+            THEN DATEDIFF('day', i.FirstOutpatientDate, s.SecondOutpatientDate)
+            ELSE NULL
+        END AS DaysBetweenFirstSecond,
 
-   CASE
-       WHEN DATEDIFF('day', i.IndexOutpatientDate, d.DataEndDate) < 180 THEN NULL
-       WHEN o.SecondOutpatientDate IS NULL THEN 1
-       WHEN DATEDIFF('day', i.IndexOutpatientDate, o.SecondOutpatientDate) > 180 THEN 1
-       ELSE 0
-   END AS Broken180_NoTimelyFollowup,
+        ed.FirstEDDate,
+        CASE
+            WHEN ed.FirstEDDate IS NOT NULL
+            THEN DATEDIFF('day', i.FirstOutpatientDate, ed.FirstEDDate)
+            ELSE NULL
+        END AS DaysUntilED,
 
+        ip.FirstInpatientDate,
+        CASE
+            WHEN ip.FirstInpatientDate IS NOT NULL
+            THEN DATEDIFF('day', i.FirstOutpatientDate, ip.FirstInpatientDate)
+            ELSE NULL
+        END AS DaysUntilInpatient,
 
-   CASE
-       WHEN DATEDIFF('day', i.IndexOutpatientDate, d.DataEndDate) < 180 THEN NULL
-       WHEN (
-               ed.FirstEDDate IS NOT NULL
-               AND DATEDIFF('day', i.IndexOutpatientDate, ed.FirstEDDate) <= 90
-               AND (o.SecondOutpatientDate IS NULL OR ed.FirstEDDate < o.SecondOutpatientDate)
+        CASE
+            WHEN s.SecondOutpatientDate IS NULL THEN 1
+            WHEN DATEDIFF('day', i.FirstOutpatientDate, s.SecondOutpatientDate) > 180 THEN 1
+            ELSE 0
+        END AS isBroken,
+
+        CASE
+            WHEN (
+                ed.FirstEDDate IS NOT NULL
+                AND DATEDIFF('day', i.FirstOutpatientDate, ed.FirstEDDate) <= 90
+                AND (s.SecondOutpatientDate IS NULL OR ed.FirstEDDate < s.SecondOutpatientDate)
             )
             OR (
-               ip.FirstInpatientDate IS NOT NULL
-               AND DATEDIFF('day', i.IndexOutpatientDate, ip.FirstInpatientDate) <= 90
-               AND (o.SecondOutpatientDate IS NULL OR ip.FirstInpatientDate < o.SecondOutpatientDate)
+                ip.FirstInpatientDate IS NOT NULL
+                AND DATEDIFF('day', i.FirstOutpatientDate, ip.FirstInpatientDate) <= 90
+                AND (s.SecondOutpatientDate IS NULL OR ip.FirstInpatientDate < s.SecondOutpatientDate)
             )
-            OR o.SecondOutpatientDate IS NULL
-            OR DATEDIFF('day', i.IndexOutpatientDate, o.SecondOutpatientDate) > 180
-       THEN 1
-       ELSE 0
-   END AS BrokenComposite_180_90
+            THEN 1
+            ELSE 0
+        END AS isAcute,
 
+        CASE
+            WHEN pu.PrevEncounterDate IS NOT NULL
+            THEN DATEDIFF('day', pu.PrevEncounterDate, i.FirstOutpatientDate)
+            ELSE NULL
+        END AS DaysSincePrevEncounter,
 
-FROM index_visits i
-CROSS JOIN data_end d
-LEFT JOIN next_diabetes_outpatient o
-   ON i.PatientDurableKey = o.PatientDurableKey
-LEFT JOIN first_ed_after_index ed
-   ON i.PatientDurableKey = ed.PatientDurableKey
-LEFT JOIN first_inpatient_after_index ip
-   ON i.PatientDurableKey = ip.PatientDurableKey
-ORDER BY i.IndexOutpatientDate
-""")
+        CASE
+            WHEN pu.PrevDiabetesEncounterDate IS NOT NULL
+            THEN DATEDIFF('day', pu.PrevDiabetesEncounterDate, i.FirstOutpatientDate)
+            ELSE NULL
+        END AS DaysSincePrevDiabetesEncounter,
 
+        pu.PriorEncounters180,
+        pu.PriorOutpatient180,
+        pu.PriorED180,
+        pu.PriorInpatient180,
+        pu.PriorDiabetes180,
+        pu.PriorDistinctDepartments180,
+        pu.PriorEncounters365,
+        pu.PriorED365,
+        pu.PriorInpatient365,
+        pu.PriorDiabetes365,
 
-journey_df = JourneyTable.df()
+        COALESCE(sf.HasAnySDOHAtIndex, 0) AS HasAnySDOHAtIndex
 
+    FROM index_visits i
+    CROSS JOIN data_end d
+    LEFT JOIN second_outpatient s
+        ON i.PatientDurableKey = s.PatientDurableKey
+    LEFT JOIN first_ed ed
+        ON i.PatientDurableKey = ed.PatientDurableKey
+    LEFT JOIN first_inpatient ip
+        ON i.PatientDurableKey = ip.PatientDurableKey
+    LEFT JOIN prior_util pu
+        ON i.PatientDurableKey = pu.PatientDurableKey
+    LEFT JOIN sdoh_flag sf
+        ON i.IndexEncounterKey = sf.EncounterKey
+)
 
-print(journey_df.head())
-print(journey_df.columns)
-from pathlib import Path
+SELECT *
+FROM final_df
+WHERE DaysObservedAfterIndex >= 180
+ORDER BY FirstOutpatientDate, PatientDurableKey
+"""
 
-path = Path("Data")
-path.mkdir(exist_ok=True)
+model_df = con.sql(query).df()
 
-journey_df.to_csv(path / "output.csv", index=False)
+print("done")
+print(model_df.shape)
+print(model_df[["isBroken", "isAcute"]].mean(numeric_only=True))
+
+# optional export
+model_df.to_csv("output2.csv", index=False)
+print("saved output2.csv")
