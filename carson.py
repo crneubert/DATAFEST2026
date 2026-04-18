@@ -360,4 +360,9 @@ journey_df = JourneyTable.df()
 
 print(journey_df.head())
 print(journey_df.columns)
+from pathlib import Path
 
+path = Path("Data")
+path.mkdir(exist_ok=True)
+
+journey_df.to_csv(path / "output.csv", index=False)
