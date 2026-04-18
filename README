@@ -1,0 +1,9 @@
+DaysSincePrevEncounter = time since any prior system contact
+DaysSincePrevDiabetesEncounter = time since prior diabetes contact
+PriorEncounters180/365 = total prior usage
+PriorOutpatient180 = prior routine care
+PriorED180/365 = prior emergency care
+PriorInpatient180/365 = prior hospitalizations
+PriorDiabetes180/365 = prior diabetes-specific history
+PriorDistinctDepartments180 = prior fragmentation
+HasAnySDOHAtIndex = social-needs data exists at index
