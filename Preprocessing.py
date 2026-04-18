@@ -1,4 +1,9 @@
 import duckdb
+import numpy
+import pandas
+import matplotlib
+import matplotlib.pyplot as plt
+
 if __name__ == '__main__':
     departments = duckdb.read_csv(
         r"Data/departments.csv",
@@ -104,6 +109,13 @@ if __name__ == '__main__':
     FROM AllData
     """)
 
+    # duckdb.sql("""
+    # SELECT
+    # AVG(IsHospitalAdmission) AS admission_rate
+    # FROM AllData
+    # WHERE GroupName = 'Type 2 diabetes mellitus';
+    # """).show()
+
     encounters = duckdb.sql("""
     SELECT PatientDurableKey, COUNT(*) AS Encounters, MIN(Date) AS FirstVisit, MAX(Date) AS LastVisit,
     ARRAY_AGG(date ORDER BY date) AS all_dates
@@ -112,9 +124,19 @@ if __name__ == '__main__':
     GROUP BY PatientDurableKey
     """)
 
-    encounters.show()
+    AdmittedEncounters = duckdb.sql("""
+    SELECT PatientDurableKey, COUNT(*) AS Encounters, MIN(Date) AS FirstVisit, MAX(Date) AS LastVisit,
+    ARRAY_AGG(date ORDER BY date) AS all_dates
+    FROM AllData
+    WHERE GroupName IN ['Type 2 diabetes mellitus']
+    AND IsHospitalAdmission = 1
+    GROUP BY PatientDurableKey
+    """)
+    AdmittedEncounters.show()
 
-    duckdb.sql("""
+    #encounters.show()
+
+    encounters2 = duckdb.sql("""
     SELECT *,
     CASE 
            WHEN Encounters > 1
@@ -127,4 +149,40 @@ if __name__ == '__main__':
            ELSE NULL
        END AS AvgBetweenEnc
     FROM encounters
-    """).show()
+    """)
+    #encounters2.show()
+
+    duckdb.sql("""
+    SELECT * FROM encounters2
+    WHERE AvgBetweenEnc > 180
+    OR Encounters = 1
+    """)
+
+    duckdb.sql("""
+    SELECT 
+    AVG(AvgBetweenEnc) AS mean_days,
+    MEDIAN(AvgBetweenEnc) AS median_days,
+    MIN(AvgBetweenEnc) AS min_days,
+    MAX(AvgBetweenEnc) AS max_days,
+    STDDEV(AvgBetweenEnc) AS std_dev_days
+    FROM encounters2;
+    """)
+
+    df = duckdb.sql("""
+    SELECT AvgBetweenEnc 
+    FROM encounters2
+    WHERE AvgBetweenEnc IS NOT NULL
+    """).df()
+
+    df.hist(bins=25)
+    #plt.show()
+
+    df = duckdb.sql("""
+        SELECT AvgBetweenEnc 
+        FROM encounters2
+        WHERE AvgBetweenEnc IS NOT NULL
+        """).df()
+
+    #df.hist(bins=25)
+    #plt.show()
+
