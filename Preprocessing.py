@@ -69,3 +69,19 @@ if __name__ == '__main__':
         FROM tigercensuscodes
         LIMIT 5
         """).show()
+
+    AllData = duckdb.sql("""
+        SELECT *
+        FROM encounters e
+        LEFT JOIN departments d
+        ON e.DepartmentKey = d.DepartmentKey
+        LEFT JOIN diagnosis di
+        ON e.PrimaryDiagnosisKey = di.DiagnosisKey
+        LEFT JOIN patients p
+        ON e.PatientDurableKey = p.DurableKey
+        LEFT JOIN providers pr
+        ON e.PatientDurableKey = pr.DurableKey
+        LEFT JOIN social_determinants s
+        ON e.EncounterKey = s.EncounterKey
+        """)
+    AllData.show()
